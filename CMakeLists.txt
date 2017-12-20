@@ -71,15 +71,20 @@ macro(_hwloc_check_decl decl)
   endif()
 
   if(_have_symbol_${_var})
-    check_c_source_compiles(
-      "int main() { ${decl}(1, 2, 3, 4, 5, 6, 7, 8, 9, 10); return 0; }"
-      compiler_failed_to_check)
-    if(compiler_failed_to_check)
+    set(_code)
+    foreach(arg ${ARGN})
+      set(_code "${_code}#include <${arg}>\n")
+    endforeach()
+    set(_code
+        "${_code}int main() ")
+    set(_code "${_code}{ ${decl}(1, 2, 3, 4, 5, 6, 7, 8, 9, 10); return 0; }\n")
+    check_c_source_compiles("${_code}" compiler_failed_to_check_${_var})
+    if(compiler_failed_to_check_${_var})
       set(HAVE_DECL_${_var} 0)
     else()
       set(HAVE_DECL_${_var} 1)
     endif()
-    write_to_config_header("#define HAVE_DECL_${_var} ${HWLOC_HAVE_${var}}")
+    write_to_config_header("#define HAVE_DECL_${_var} ${HAVE_DECL_${_var}}")
   endif()
 endmacro()
 
