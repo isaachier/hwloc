@@ -5,6 +5,18 @@ set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain.cmake"
     CACHE FILEPATH
     "Toolchain to use for building this package and dependencies")
 
+include(CheckCSourceCompiles)
+include(CheckIncludeFile)
+include(CheckSymbolExists)
+
+include(CheckDecl)
+include(CheckFunc)
+include(CheckHeader)
+include(CheckLib)
+include(CheckType)
+include(IncludesDefault)
+include(WriteToConfigHeader)
+
 execute_process(COMMAND /bin/sh config/hwloc_get_version.sh VERSION --version
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                 RESULT_VARIABLE version_result
@@ -16,6 +28,7 @@ if(NOT version_result EQUAL 0)
     "${version_result}")
 endif()
 string(REGEX MATCH "^[0-9.]+" numeric_version "${HWLOC_VERSION}")
+write_to_config_header("#define HWLOC_VERSION \"${HWLOC_VERSION}\"")
 
 execute_process(
   COMMAND /bin/sh config/hwloc_get_version.sh VERSION --release-date
@@ -30,38 +43,40 @@ if(NOT release_date_result EQUAL 0)
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(HWLOC_DEBUG ON)
+  write_to_config_header("#define HWLOC_DEBUG")
+else()
+  write_to_config_header("/* #undef HWLOC_DEBUG */")
 endif()
+
 
 set(HWLOC_SYM_PREFIX "hwloc_" CACHE STRING "Prefix for hwloc symbols")
 if(NOT HWLOC_SYM_PREFIX)
   message(FATAL_ERROR
     "HWLOC_SYM_PREFIX cannot be empty, use \"hwloc_\" instead")
 endif()
+write_to_config_header("#define HWLOC_SYM_PREFIX ${HWLOC_SYM_PREFIX}")
 string(TOUPPER HWLOC_SYM_PREFIX_CAPS "${HWLOC_SYM_PREFIX}")
+write_to_config_header("#define HWLOC_SYM_PREFIX_CAPS ${HWLOC_SYM_PREFIX_CAPS}")
 
 if(HWLOC_SYM_PREFIX STREQUAL "hwloc_")
   set(HWLOC_SYM_TRANSFORM OFF)
+  write_to_config_header("#define HWLOC_SYM_TRANSFORM 0")
 else()
   set(HWLOC_SYM_TRANSFORM ON)
+  write_to_config_header("#define HWLOC_SYM_TRANSFORM 1")
 endif()
+
+write_to_config_header("#ifndef _HPUX_SOURCE
+#undef _HPUX_SOURCE
+#endif
+#define _HPUX_SOURCE 1")
+
+write_to_config_header("#define SIZEOF_VOID_P ${CMAKE_SIZEOF_VOID_P}")
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wmissing-prototypes -Wundef")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wpointer-arith -Wcast-align")
 endif()
-
-include(CheckCSourceCompiles)
-include(CheckIncludeFile)
-include(CheckSymbolExists)
-
-include(CheckDecl)
-include(CheckFunc)
-include(CheckHeader)
-include(CheckLib)
-include(CheckType)
-include(IncludesDefault)
-include(WriteToConfigHeader)
 
 macro(_hwloc_check_decl decl)
   string(MAKE_C_IDENTIFIER "${decl}" _var)
@@ -94,39 +109,39 @@ check_symbol_exists("__bgq__" "" bgq)
 if(CMAKE_SYSTEM_PROCESSOR STREQUAL "powerpc" AND
    CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
    bgq)
-  set(HWLOC_BGQ_SYS 1)
+  write_to_config_header("#define HWLOC_BGQ_SYS 1")
   list(APPEND components bgq)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  set(HWLOC_LINUX_SYS 1)
-  set(HWLOC_HAVE_LINUXIO 1)
-  set(HWLOC_HAVE_LINUXPCI 1)
+  write_to_config_header("#define HWLOC_LINUX_SYS 1")
+  write_to_config_header("#define HWLOC_HAVE_LINUXIO 1")
+  write_to_config_header("#define HWLOC_HAVE_LINUXPCI 1")
   list(APPEND components linux linuxio)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "IRIX")
-  set(HWLOC_IRIX_SYS 1)
+  write_to_config_header("#define HWLOC_IRIX_SYS 1")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  set(HWLOC_DARWIN_SYS 1)
+  write_to_config_header("#define HWLOC_DARWIN_SYS 1")
   list(APPEND components darwin)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Solaris")
-  set(HWLOC_SOLARIS_SYS 1)
+  write_to_config_header("#define HWLOC_SOLARIS_SYS 1")
   list(APPEND components solaris)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "AIX")
-  set(HWLOC_AIX_SYS 1)
+  write_to_config_header("#define HWLOC_AIX_SYS 1")
   list(APPEND components aix)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "HPUX")
-  set(HWLOC_HPUX_SYS 1)
+  write_to_config_header("#define HWLOC_HPUX_SYS 1")
   list(APPEND components hpux)
 elseif(WIN32)
-  set(HWLOC_WIN_SYS 1)
+  write_to_config_header("#define HWLOC_WIN_SYS 1")
   list(APPEND components windows)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-  set(HWLOC_FREEBSD_SYS 1)
+  write_to_config_header("#define HWLOC_FREEBSD_SYS 1")
   list(APPEND components freebsd)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
-  set(HWLOC_NETBSD_SYS 1)
+  write_to_config_header("#define HWLOC_NETBSD_SYS 1")
   list(APPEND components netbsd)
 else()
   message(WARNING "Unsupported! ${CMAKE_SYSTEM_NAME}")
-  set(HWLOC_UNSUPPORTED_SYS 1)
+  write_to_config_header("#define HWLOC_UNSUPPORTED_SYS 1")
   message(WARNING "hwloc does not support this system. "
     "hwloc will attempt to build (but it may not work). "
     "hwloc run-time results may be reduced to showing just one processor "
@@ -135,21 +150,23 @@ endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(i.*86|x86_64|amd64)$")
   if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-    set(HWLOC_X86_32_ARCH 1)
+    write_to_config_header("#define HWLOC_X86_32_ARCH 1")
     set(HWLOC_MS_LIB_ARCH X86)
   else()
     if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
       message(STATUS "unknown -- assuming x86_64")
     endif()
-    set(HWLOC_X86_64_ARCH 1)
+    write_to_config_header("#define HWLOC_X86_64_ARCH 1")
     set(HWLOC_MS_LIB_ARCH X64)
   endif()
 else()
   message("unknown processor ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-set(HWLOC_SIZEOF_UNSIGNED_LONG ${CMAKE_SIZEOF_UNSIGNED_LONG})
-set(HWLOC_SIZEOF_UNSIGNED_INT ${CMAKE_SIZEOF_UNSIGNED_INT})
+write_to_config_header(
+  "#define HWLOC_SIZEOF_UNSIGNED_LONG ${CMAKE_SIZEOF_UNSIGNED_LONG}")
+write_to_config_header(
+  "#define HWLOC_SIZEOF_UNSIGNED_INT ${CMAKE_SIZEOF_UNSIGNED_INT}")
 
 # TODO: Attributes
 # TODO: Visibility
@@ -198,7 +215,6 @@ check_func(strncasecmp)
 if(HAVE_STRNCASECMP)
   _hwloc_check_decl(strncasecmp)
   if(HAVE_DECL_STRNCASECMP)
-    set(HWLOC_HAVE_STRNCASECMP)
     write_to_config_header("#define HWLOC_HAVE_STRNCASECMP")
   endif()
 endif(HAVE_STRNCASECMP)
@@ -208,7 +224,7 @@ check_func(setlocale)
 
 check_header("stdint.h")
 if(HAVE_STDINT_H)
-  set(HWLOC_HAVE_STDINT_H 1)
+  write_to_config_header("#define HWLOC_HAVE_STDINT_H 1")
 endif()
 
 check_header("sys/mman.h")
@@ -387,7 +403,6 @@ if(hwloc_thread_t)
   write_to_config_header("#define hwloc_thread_t ${hwloc_thread_t}")
 endif()
 
-set(CMAKE_REQUIRED_DEFINITIONS "-D_GNU_SOURCE")
 if(NOT args_check AND NOT HWLOC_STRICT_ARGS_CFLAGS)
   message(FATAL_ERROR
           "Support for sched_setaffinity() requires a C compiler which "
@@ -396,6 +411,136 @@ if(NOT args_check AND NOT HWLOC_STRICT_ARGS_CFLAGS)
 elseif(NOT args_check AND HWLOC_STRICT_ARGS_CFLAGS)
   set(CMAKE_REQUIRED_FLAGS ${HWLOC_STRICT_ARGS_CFLAGS})
 endif()
+set(CMAKE_REQUIRED_DEFINITIONS "-D_GNU_SOURCE")
 _hwloc_check_decl(sched_setaffinity "sched.h")
-set(CMAKE_REQUIRED_DEFINITIONS)
+if(HAVE_DECL_SCHED_SETAFFINITY)
+  write_to_config_header("#define HWLOC_HAVE_SCHED_SETAFFINITY 1")
+else()
+  write_to_config_header("/* #undef HWLOC_HAVE_SCHED_SETAFFINITY */")
+endif()
+
+check_c_source_compiles("
+#include <sched.h>
+static unsigned long mask;
+int main() { sched_setaffinity(0, (void*) &mask); return 0; }"
+  HWLOC_HAVE_OLD_SCHED_SETAFFINITY)
+if(HWLOC_HAVE_OLD_SCHED_SETAFFINITY)
+  write_to_config_header("#define HWLOC_HAVE_OLD_SCHED_SETAFFINITY 1")
+else()
+  write_to_config_header("/* #undef HWLOC_HAVE_OLD_SCHED_SETAFFINITY */")
+endif()
 set(CMAKE_REQUIRED_FLAGS)
+
+check_c_source_compiles("
+#include <sched.h>
+cpu_set_t set;
+int main() { CPU_ZERO(&set); CPU_SET(0, &set); return 0; }"
+  HWLOC_HAVE_CPU_SET)
+if(HWLOC_HAVE_CPU_SET)
+  write_to_config_header("#define HWLOC_HAVE_CPU_SET 1")
+else()
+  write_to_config_header("/* #undef HWLOC_HAVE_CPU_SET */")
+endif()
+
+check_c_source_compiles("
+#include <sched.h>
+cpu_set_t *set;
+int main()
+{
+  set = CPU_ALLOC(1024);
+  CPU_ZERO_S(CPU_ALLOC_SIZE(1024), set);
+  CPU_SET_S(CPU_ALLOC_SIZE(1024), 0, set);
+  CPU_FREE(set);
+  return 0;
+  }" HWLOC_HAVE_CPU_SET_S)
+if(HWLOC_HAVE_CPU_SET_S)
+  write_to_config_header("#define HWLOC_HAVE_CPU_SET_S 1")
+else()
+  write_to_config_header("/* #undef HWLOC_HAVE_CPU_SET_S */")
+endif()
+
+check_c_source_compiles("
+#include <unistd.h>
+#include <sys/syscall.h>
+int main() { syscall(0, 1, 2, 3, 4, 5, 6); return 0; }" HWLOC_HAVE_SYSCALL)
+if(HWLOC_HAVE_SYSCALL)
+  write_to_config_header("#define HWLOC_HAVE_SYSCALL 1")
+else()
+  write_to_config_header("/* #undef HWLOC_HAVE_SYSCALL */")
+endif()
+
+check_func(ffs)
+if(HAVE_FFS)
+  _hwloc_check_decl(ffs)
+  if(HAVE_DECL_FFS)
+    write_to_config_header("#define HWLOC_HAVE_DECL_FFS 1")
+    # TODO: Detect gccfss
+  else()
+    write_to_config_header("/* #undef HWLOC_HAVE_DECL_FFS */")
+  endif()
+  write_to_config_header("#define HWLOC_HAVE_FFS 1")
+endif()
+
+foreach(func ffsl fls flsl clz clzl)
+  check_func(${func})
+  string(TOUPPER ${func} func_name)
+  if(HAVE_${func_name})
+    _hwloc_check_decl(${func})
+    if(HAVE_DECL_${func_name})
+      write_to_config_header("#define HWLOC_HAVE_DECL_${func_name} 1")
+    else()
+      write_to_config_header("/* #undef HWLOC_HAVE_DECL_${func_name} */")
+    endif()
+    write_to_config_header("#define HWLOC_HAVE_${func_name} 1")
+  endif()
+endforeach()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+  check_func(openat)
+  if(HAVE_OPENAT)
+    set(hwloc_have_openat 1)
+  endif()
+endif()
+
+check_header("malloc.h")
+check_func(getpagesize)
+check_func(memalign)
+check_func(posix_memalign)
+
+check_header("sys/utsname.h")
+check_func(uname)
+
+# TODO: embedded mode
+if(HWLOC_MODE STREQUAL "embedded")
+  set(HAVE_DECL_RUNNING_ON_VALGRIND 0)
+  write_to_config_header("#define HAVE_DECL_RUNNING_ON_VALGRIND 0")
+else()
+  check_header("valgrind/valgrind.h")
+  if(HAVE_VALGRIND_VALGRIND_H)
+    check_decl(RUNNING_ON_VALGRIND "valgrind/valgrind.h")
+  endif()
+endif()
+
+check_header("pthread_np.h")
+set(headers "pthread.h")
+if(HAVE_PTHREAD_NP_H)
+  list(APPEND headers "pthread_np.h")
+endif()
+check_decl(pthread_setaffinity_np ${headers})
+check_decl(pthread_getaffinity_np ${headers})
+check_func(sched_setaffinity)
+
+if(HAVE_SCHED_SETAFFINITY)
+  set(hwloc_have_sched_setaffinity ON)
+endif()
+
+check_header("sys/cpuset.h")
+check_func(cpuset_setaffinity)
+set(CMAKE_REQUIRED_LIBRARIES pthread)
+check_func(pthread_getthrds_np)
+if(HAVE_PTHREAD_GETTHRDS_NP)
+  write_to_config_header("#define HWLOC_HAVE_PTHREAD_GETTHRDS_NP 1")
+else()
+  write_to_config_header("/* #undef HWLOC_HAVE_PTHREAD_GETTHRDS_NP */")
+endif()
+set(CMAKE_REQUIRED_LIBRARIES)
