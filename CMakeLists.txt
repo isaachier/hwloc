@@ -8,6 +8,7 @@ set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/toolchain.cmake"
 include(CheckCSourceCompiles)
 include(CheckIncludeFile)
 include(CheckSymbolExists)
+include(CMakeDependentOption)
 
 include(CheckDecl)
 include(CheckFunc)
@@ -16,6 +17,57 @@ include(CheckLib)
 include(CheckType)
 include(IncludesDefault)
 include(WriteToConfigHeader)
+
+set(HWLOC_MODE "standalone" CACHE STRING "Mode for building hwloc")
+set_property(CACHE HWLOC_MODE PROPERTY STRINGS "embedded;standalone")
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND HWLOC_MODE STREQUAL "embedded")
+  message(FATAL_ERROR
+          "Cannot use embedded mode for debug build, "
+          "please set HWLOC_MODE to standalone or change CMAKE_BUILD_TYPE")
+endif()
+
+set(HWLOC_SYM_PREFIX "hwloc_" CACHE STRING "Prefix for hwloc symbols")
+if(NOT HWLOC_SYM_PREFIX)
+  message(FATAL_ERROR
+    "HWLOC_SYM_PREFIX cannot be empty, use \"hwloc_\" instead")
+endif()
+
+# TODO: Handle these options
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+  set(USING_GNU)
+endif()
+cmake_dependent_option(HWLOC_ENABLE_PICKY
+  "Enable maximum compiler pickyness" ON
+  "USING_GNU" OFF)
+option(HWLOC_ENABLE_CAIRO ON)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(i.*86|x86_64|amd64)$")
+  set(IS_X86 ON)
+endif()
+cmake_dependent_option(HWLOC_ENABLE_CPUID
+  "Enable the cpuid-based architecture specific support (x86 component)" ON
+  "IS_X86" OFF)
+option(HWLOC_ENABLE_LIBXML2 ON)
+
+option(HWLOC_ENABLE_IO
+       "Enable I/O discovery (PCI, LinuxIO, CUDA, OpenCL, NVML, GL)"
+       ON)
+cmake_dependent_option(HWLOC_ENABLE_PCI "Enable the PCI device discovery" ON
+                       "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(HWLOC_ENABLE_OPENCL "Enable the OpenCL device discovery" ON
+                       "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(HWLOC_ENABLE_CUDA "Enable the CUDA device discovery" ON
+                       "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(HWLOC_ENABLE_NVML "Enable the nvml device discovery" ON
+                       "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(HWLOC_ENABLE_GL "Enable the gl device discovery" ON
+                       "HWLOC_ENABLE_IO" OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(LINUX ON)
+endif()
+cmake_dependent_option(
+  HWLOC_ENABLE_LIBUDEV "Enable the Linux libudev support" ON "LINUX" OFF)
+set(HWLOC_PLUGINS "" CACHE STRING
+    "Build the given components as dynamically-loaded plugins")
 
 execute_process(COMMAND /bin/sh config/hwloc_get_version.sh VERSION --version
                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -48,12 +100,6 @@ else()
   write_to_config_header("/* #undef HWLOC_DEBUG */")
 endif()
 
-
-set(HWLOC_SYM_PREFIX "hwloc_" CACHE STRING "Prefix for hwloc symbols")
-if(NOT HWLOC_SYM_PREFIX)
-  message(FATAL_ERROR
-    "HWLOC_SYM_PREFIX cannot be empty, use \"hwloc_\" instead")
-endif()
 write_to_config_header("#define HWLOC_SYM_PREFIX ${HWLOC_SYM_PREFIX}")
 string(TOUPPER HWLOC_SYM_PREFIX_CAPS "${HWLOC_SYM_PREFIX}")
 write_to_config_header("#define HWLOC_SYM_PREFIX_CAPS ${HWLOC_SYM_PREFIX_CAPS}")
@@ -150,23 +196,27 @@ endif()
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(i.*86|x86_64|amd64)$")
   if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-    write_to_config_header("#define HWLOC_X86_32_ARCH 1")
+    set(hwloc_cpu_define "#define HWLOC_X86_32_ARCH 1")
+    write_to_config_header("${hwloc_cpu_define}")
     set(HWLOC_MS_LIB_ARCH X86)
   else()
     if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
       message(STATUS "unknown -- assuming x86_64")
     endif()
-    write_to_config_header("#define HWLOC_X86_64_ARCH 1")
+    set(hwloc_cpu_define "#define HWLOC_X86_64_ARCH 1")
+    write_to_config_header("${hwloc_cpu_define}")
     set(HWLOC_MS_LIB_ARCH X64)
   endif()
 else()
   message("unknown processor ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
+check_type_size("unsigned long" HWLOC_SIZEOF_UNSIGNED_LONG)
 write_to_config_header(
-  "#define HWLOC_SIZEOF_UNSIGNED_LONG ${CMAKE_SIZEOF_UNSIGNED_LONG}")
+  "#define HWLOC_SIZEOF_UNSIGNED_LONG ${HWLOC_SIZEOF_UNSIGNED_LONG}")
+check_type_size("unsigned int" HWLOC_SIZEOF_UNSIGNED_INT)
 write_to_config_header(
-  "#define HWLOC_SIZEOF_UNSIGNED_INT ${CMAKE_SIZEOF_UNSIGNED_INT}")
+  "#define HWLOC_SIZEOF_UNSIGNED_INT ${HWLOC_SIZEOF_UNSIGNED_INT}")
 
 # TODO: Attributes
 # TODO: Visibility
@@ -544,3 +594,203 @@ else()
   write_to_config_header("/* #undef HWLOC_HAVE_PTHREAD_GETTHRDS_NP */")
 endif()
 set(CMAKE_REQUIRED_LIBRARIES)
+check_func(cpuset_setid)
+
+if(HWLOC_ENABLE_LIBUDEV)
+  check_header("libudev.h")
+  if(HAVE_LIBUDEV_H)
+    check_lib(udev udev_device_new_from_subsystem_sysname)
+    if(HAVE_LIBUDEV)
+      list(APPEND libs libudev)
+      write_to_config_header("#define HWLOC_HAVE_LIBUDEV 1")
+    else()
+      write_to_config_header("/* #undef HWLOC_HAVE_LIBUDEV */")
+    endif()
+  endif()
+endif()
+
+if(HWLOC_ENABLE_PCI)
+  check_header("pciaccess.h")
+  if(HAVE_PCIACCESS_H)
+    check_lib(pciaccess pci_slot_match_iterator_create)
+    if(HAVE_LIBPCIACCESS)
+      list(APPEND libs pciaccess)
+      list(APPEND components pci)
+    endif()
+  endif()
+endif()
+
+if(HWLOC_ENABLE_OPENCL)
+  check_header("CL/cl_ext.h")
+  if(HAVE_CL_CL_EXT_H)
+    check_lib(OpenCL clGetDeviceIDs)
+    if(HAVE_LIBOPENCL)
+      check_decl(CL_DEVICE_TOPOLOGY_AMD "CL/cl_ext.h")
+      if(HAVE_DECL_CL_DEVICE_TOPOLOGY_AMD)
+        list(APPEND libs OpenCL)
+        list(APPEND components opencl)
+        write_to_config_header("#define HWLOC_HAVE_OPENCL 1")
+      endif()
+    endif()
+  endif()
+endif()
+
+if(HWLOC_ENABLE_CUDA)
+  check_header("cuda.h")
+  if(HAVE_CUDA_H)
+    check_c_source_compiles("
+#include <cuda.h>
+#ifndef CUDA_VERSION
+#error CUDA_VERSION undefined
+#elif CUDA_VERSION < 3020
+#error CUDA_VERSION too old
+#endif
+int main() { return 0; }" _have_cuda)
+    if(_have_cuda)
+      check_lib(cuda cuInit)
+      if(HAVE_LIBCUDA)
+        write_to_config_header("#define HWLOC_HAVE_CUDA 1")
+      endif()
+    endif()
+  endif()
+
+  check_header("cuda_runtime_api.h")
+  if(HAVE_CUDA_RUNTIME_API_H)
+    check_c_source_compiles("
+#include <cuda_runtime_api.h>
+#ifndef CUDART_VERSION
+#error CUDART_VERSION undefined
+#elif CUDART_VERSION < 3020
+#error CUDART_VERSION too old
+#endif
+int main() { return 0; }" _have_cudart)
+    if(_have_cudart)
+      check_lib(cudart cudaGetDeviceProperties)
+      if(HAVE_LIBCUDART)
+        list(APPEND components cuda)
+        write_to_config_header("#define HWLOC_HAVE_CUDART 1")
+      endif()
+    endif()
+  endif()
+endif()
+
+if(HWLOC_ENABLE_NVML)
+  check_header("nvml.h")
+  if(HAVE_NVML_H)
+    check_lib("nvidia-ml" nvmlInit)
+    if(HAVE_LIBNVIDIA_ML)
+      check_decl(nvmlDeviceGetMaxPcieLinkGeneration "nvml.h")
+      list(APPEND libs "nvidia-ml")
+      list(APPEND components nvml)
+      write_to_config_header("#define HWLOC_HAVE_NVML 1")
+    endif()
+  endif()
+endif()
+
+check_header("X11/Xlib.h")
+if(HAVE_X11_XLIB_H)
+  check_lib(X11 XOpenDisplay)
+  if(HAVE_LIBX11)
+    check_header("X11/Xutil.h")
+    if(HAVE_X11_XUTIL_H)
+      check_header("X11/keysym.h")
+      if(HAVE_X11_KEYSYM_H)
+        write_to_config_header("#define HWLOC_HAVE_X11_KEYSYM 1")
+        list(APPEND libs X11)
+      endif()
+    endif()
+  endif()
+endif()
+
+if(HWLOC_ENABLE_GL)
+  check_header("NVCtrl/NVCtrl.h")
+  if(HAVE_NVCTRL_NVCTRL_H)
+    check_lib(XNVCtrl XNVCTRLQueryTargetAttribute)
+    if(HAVE_LIBXNVCTRL)
+      list(APPEND components gl)
+      write_to_config_header("#define HWLOC_HAVE_GL 1")
+    endif()
+  endif()
+endif()
+
+if(HWLOC_ENABLE_LIBXML2)
+  check_header("libxml/parser.h")
+  if(HAVE_LIBXML_PARSER_H)
+    check_lib(xml2 xmlNewDoc)
+    if(HAVE_LIBXML2)
+      list(APPEND xml_libxml)
+      write_to_config_header("#define HWLOC_HAVE_LIBXML2 1")
+    endif()
+  endif()
+endif()
+
+if(HWLOC_ENABLE_CPUID)
+  if(WIN32)
+    set(x86_cpuid_check_include "#include <windows.h>")
+    set(x86_cpuid_check_define "#define hwloc_uint64_t DWORDLONG")
+  else()
+    if(HAVE_STDINT_H)
+      set(x86_cpuid_check_include "#include <stdint.h>")
+    endif()
+    set(x86_cpuid_check_define "#define hwloc_uint64_t uint64_t")
+  endif()
+  set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+  check_c_source_compiles("
+#include <stdio.h>
+${hwloc_cpu_define}
+${x86_cpuid_check_include}
+${x86_cpuid_check_define}
+#define __hwloc_inline
+#include <private/cpuid-x86.h>
+int main()
+{
+    if (hwloc_have_x86_cpuid()) {
+        unsigned eax = 0;
+        unsigned ebx = 0;
+        unsigned ecx = 0;
+        unsigned edx = 0;
+        hwloc_x86_cpuid(&eax, &ebx, &ecx, &edx);
+    }
+    return 0;
+}" _have_x86_cpuid)
+  if(_have_x86_cpuid)
+    list(APPEND components x86)
+    write_to_config_header("#define HWLOC_HAVE_X86_CPUID 1")
+  endif()
+endif()
+
+find_package(Threads REQUIRED)
+set(CMAKE_REQUIRED_LIBRARIES Threads::Threads)
+check_func(pthread_mutex_lock)
+set(CMAKE_REQUIRED_LIBRARIES)
+if(HAVE_PTHREAD_MUTEX_LOCK)
+  list(APPEND libs Threads::Threads)
+elseif(NOT WIN32)
+  message(FATAL_ERROR
+    "pthread_mutex_lock not available, required for thread-safe initialization "
+    "on non-Windows platforms.")
+endif()
+
+if(HWLOC_PLUGINS)
+  if(CMAKE_SYSTEM_NAME STREQUAL "AIX")
+    message(FATAL_ERROR
+      "libltdl does not work on AIX, plugins support cannot be enabled.")
+  endif()
+  if(WIN32)
+    message(FATAL_ERROR
+      "Plugins not supported on non-native Windows build, "
+      "plugins support cannot be enabled.")
+  endif()
+
+  check_header("ltdl.h")
+  if(NOT HAVE_LTDL_H)
+    message(FATAL_ERROR
+      "Plugin support requested, but could not find ltdl.h.")
+  endif()
+  check_lib(ltdl lt_dlopennext)
+  if(NOT HAVE_LIBLTDL)
+    message(FATAL_ERROR
+      "Plugin support requested, but could not find libltdl.")
+  endif()
+  list(APPEND libs ltdl)
+endif()
