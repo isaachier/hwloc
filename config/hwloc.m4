@@ -812,7 +812,7 @@ EOF])
 #endif]], [[int i = 3;]])],
          [AC_MSG_RESULT(yes)
           AC_CHECK_LIB([cuda], [cuInit],
-                       [AC_DEFINE([HAVE_CUDA], 1, [Define to 1 if we have -lcuda])
+                       [AC_DEFINE([HWLOC_HAVE_CUDA], 1, [Define to 1 if we have -lcuda])
                         hwloc_have_cuda=yes])],
          [AC_MSG_RESULT(no)])])
 
