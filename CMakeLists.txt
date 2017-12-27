@@ -12,9 +12,59 @@ include(CMakeDependentOption)
 
 include(HunterGate)
 HunterGate(
-    URL "https://github.com/ruslo/hunter/archive/v0.19.211.tar.gz"
-    SHA1 "7f14942f2c1efb6e0e604c0105d9a307d9d81560"
+    URL "https://github.com/ruslo/hunter/archive/v0.19.213.tar.gz"
+    SHA1 "59b2b880178bdc1e9cce83f279f1d88feefa07a2"
 )
+
+execute_process(COMMAND /bin/sh config/hwloc_get_version.sh VERSION --version
+                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                RESULT_VARIABLE version_result
+                OUTPUT_VARIABLE version_output
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT version_result EQUAL 0)
+  message(FATAL_ERROR
+    "Cannot determine project version because an error occurred: "
+    "${version_result}")
+endif()
+
+set(HWLOC_VERSION "${version_output}")
+
+execute_process(
+  COMMAND /bin/sh config/hwloc_get_version.sh VERSION --release-date
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  RESULT_VARIABLE release_date_result
+  OUTPUT_VARIABLE release_date_output
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT release_date_result EQUAL 0)
+  message(WARNING
+    "Cannot determine project release date because an error occurred: "
+    "${release_date_result}")
+endif()
+
+set(HWLOC_RELEASE_DATE "${release_date_output}")
+
+string(REGEX MATCH "^[0-9.]+" numeric_version "${HWLOC_VERSION}")
+project(hwloc VERSION "${numeric_version}")
+
+hunter_add_package(autoutils)
+find_package(autoutils CONFIG REQUIRED)
+
+set(autoutils_config_path
+    "${CMAKE_CURRENT_BINARY_DIR}/include/private/autogen/config.h"
+    CACHE FILEPATH "Path to generated config.h")
+
+include(AutoutilsCheckDecl)
+include(AutoutilsCheckFunc)
+include(AutoutilsCheckHeader)
+include(AutoutilsCheckLib)
+include(AutoutilsCheckType)
+include(AutoutilsIncludesDefault)
+include(AutoutilsWriteToConfigHeader)
+
+autoutils_write_to_config_header("#define HWLOC_VERSION \"${HWLOC_VERSION}\"")
+
+# Set default include headers in new list variable `includes_default`
+autoutils_includes_default(includes_default)
 
 set(HWLOC_MODE "standalone" CACHE STRING "Mode for building hwloc")
 set_property(CACHE HWLOC_MODE PROPERTY STRINGS "embedded;standalone")
@@ -25,10 +75,18 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND HWLOC_MODE STREQUAL "embedded")
 endif()
 
 set(HWLOC_SYM_PREFIX "hwloc_" CACHE STRING "Prefix for hwloc symbols")
-if(NOT HWLOC_SYM_PREFIX)
+
+if(HWLOC_SYM_PREFIX STREQUAL "")
   message(FATAL_ERROR
     "HWLOC_SYM_PREFIX cannot be empty, use \"hwloc_\" instead")
 endif()
+
+autoutils_write_to_config_header(
+  "#define HWLOC_SYM_PREFIX ${HWLOC_SYM_PREFIX}")
+
+string(TOUPPER "${HWLOC_SYM_PREFIX}" HWLOC_SYM_PREFIX_CAPS)
+autoutils_write_to_config_header(
+  "#define HWLOC_SYM_PREFIX_CAPS ${HWLOC_SYM_PREFIX_CAPS}")
 
 # TODO: Handle these options
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -49,16 +107,21 @@ option(HWLOC_ENABLE_LIBXML2 ON)
 option(HWLOC_ENABLE_IO
        "Enable I/O discovery (PCI, LinuxIO, CUDA, OpenCL, NVML, GL)"
        ON)
-cmake_dependent_option(HWLOC_ENABLE_PCI "Enable the PCI device discovery" ON
-                       "HWLOC_ENABLE_IO" OFF)
-cmake_dependent_option(HWLOC_ENABLE_OPENCL "Enable the OpenCL device discovery" ON
-                       "HWLOC_ENABLE_IO" OFF)
-cmake_dependent_option(HWLOC_ENABLE_CUDA "Enable the CUDA device discovery" ON
-                       "HWLOC_ENABLE_IO" OFF)
-cmake_dependent_option(HWLOC_ENABLE_NVML "Enable the nvml device discovery" ON
-                       "HWLOC_ENABLE_IO" OFF)
-cmake_dependent_option(HWLOC_ENABLE_GL "Enable the gl device discovery" ON
-                       "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(
+  HWLOC_ENABLE_PCI "Enable the PCI device discovery" ON
+  "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(
+  HWLOC_ENABLE_OPENCL "Enable the OpenCL device discovery" ON
+  "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(
+  HWLOC_ENABLE_CUDA "Enable the CUDA device discovery" ON
+  "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(
+  HWLOC_ENABLE_NVML "Enable the nvml device discovery" ON
+  "HWLOC_ENABLE_IO" OFF)
+cmake_dependent_option(
+  HWLOC_ENABLE_GL "Enable the gl device discovery" ON
+  "HWLOC_ENABLE_IO" OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(LINUX ON)
 endif()
@@ -67,66 +130,21 @@ cmake_dependent_option(
 set(HWLOC_PLUGINS "" CACHE STRING
     "Build the given components as dynamically-loaded plugins")
 
-execute_process(COMMAND /bin/sh config/hwloc_get_version.sh VERSION --version
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                RESULT_VARIABLE version_result
-                OUTPUT_VARIABLE HWLOC_VERSION
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
-if(NOT version_result EQUAL 0)
-  message(FATAL_ERROR
-    "Cannot determine project version because an error occurred: "
-    "${version_result}")
-endif()
-string(REGEX MATCH "^[0-9.]+" numeric_version "${HWLOC_VERSION}")
-project(hwloc VERSION "${numeric_version}")
-
-hunter_add_package(autoutils)
-find_package(autoutils CONFIG REQUIRED)
-
-set(autoutils_config_path "${CMAKE_CURRENT_BINARY_DIR}/private/autogen/config.h"
-    CACHE FILEPATH "Path to generated config.h" FORCE)
-
-include(AutoutilsCheckDecl)
-include(AutoutilsCheckFunc)
-include(AutoutilsCheckHeader)
-include(AutoutilsCheckLib)
-include(AutoutilsCheckType)
-include(AutoutilsIncludesDefault)
-include(AutoutilsWriteToConfigHeader)
-
-# Set default include headers in new list variable `includes_default`
-autoutils_includes_default(includes_default)
-
-autoutils_write_to_config_header("#define HWLOC_VERSION \"${HWLOC_VERSION}\"")
-
-execute_process(
-  COMMAND /bin/sh config/hwloc_get_version.sh VERSION --release-date
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  RESULT_VARIABLE release_date_result
-  OUTPUT_VARIABLE HWLOC_RELEASE_DATE
-  OUTPUT_STRIP_TRAILING_WHITESPACE)
-if(NOT release_date_result EQUAL 0)
-  message(WARNING
-    "Cannot determine project release date because an error occurred: "
-    "${release_date_result}")
-endif()
-
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(HWLOC_DEBUG ON CACHE BOOL INTERNAL "${_doc}")
   autoutils_write_to_config_header("#define HWLOC_DEBUG")
 else()
+  set(HWLOC_DEBUG OFF CACHE BOOL INTERNAL "${_doc}")
   autoutils_write_to_config_header("/* #undef HWLOC_DEBUG */")
 endif()
 
-autoutils_write_to_config_header("#define HWLOC_SYM_PREFIX ${HWLOC_SYM_PREFIX}")
-string(TOUPPER "${HWLOC_SYM_PREFIX}" HWLOC_SYM_PREFIX_CAPS)
-autoutils_write_to_config_header("#define HWLOC_SYM_PREFIX_CAPS ${HWLOC_SYM_PREFIX_CAPS}")
-
+set(_doc "whether or not to transform hwloc symbols")
 if(HWLOC_SYM_PREFIX STREQUAL "hwloc_")
   set(HWLOC_SYM_TRANSFORM OFF)
-  autoutils_write_to_config_header("#define HWLOC_SYM_TRANSFORM 0")
+  autoutils_write_to_config_header("/* #undef HWLOC_SYM_TRANSFORM */")
 else()
   set(HWLOC_SYM_TRANSFORM ON)
-  autoutils_write_to_config_header("#define HWLOC_SYM_TRANSFORM 1")
+  autoutils_write_to_config_header("#define HWLOC_SYM_TRANSFORM")
 endif()
 
 autoutils_write_to_config_header("#ifndef _HPUX_SOURCE
@@ -134,7 +152,8 @@ autoutils_write_to_config_header("#ifndef _HPUX_SOURCE
 #endif
 #define _HPUX_SOURCE 1")
 
-autoutils_write_to_config_header("#define SIZEOF_VOID_P ${CMAKE_SIZEOF_VOID_P}")
+autoutils_write_to_config_header(
+  "#define SIZEOF_VOID_P ${CMAKE_SIZEOF_VOID_P}")
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wmissing-prototypes -Wundef")
@@ -144,9 +163,7 @@ endif()
 macro(_hwloc_check_decl decl)
   string(MAKE_C_IDENTIFIER "${decl}" _var)
   string(TOUPPER "${_var}" _var)
-  if(NOT DEFINED _have_symbol_${_var})
-    check_symbol_exists(${decl} "${ARGN}" _have_symbol_${_var})
-  endif()
+  check_symbol_exists(${decl} "${ARGN}" _have_symbol_${_var})
 
   if(_have_symbol_${_var})
     set(_code)
@@ -162,7 +179,8 @@ macro(_hwloc_check_decl decl)
     else()
       set(HAVE_DECL_${_var} 1)
     endif()
-    autoutils_write_to_config_header("#define HAVE_DECL_${_var} ${HAVE_DECL_${_var}}")
+    autoutils_write_to_config_header(
+      "#define HAVE_DECL_${_var} ${HAVE_DECL_${_var}}")
   endif()
 endmacro()
 
@@ -176,40 +194,33 @@ if(CMAKE_SYSTEM_PROCESSOR STREQUAL "powerpc" AND
   autoutils_write_to_config_header("#define HWLOC_BGQ_SYS 1")
   list(APPEND components bgq)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  set(hwloc_have_linux ON)
+  set(HWLOC_LINUX_SYS ON)
   autoutils_write_to_config_header("#define HWLOC_LINUX_SYS 1")
   autoutils_write_to_config_header("#define HWLOC_HAVE_LINUXIO 1")
   autoutils_write_to_config_header("#define HWLOC_HAVE_LINUXPCI 1")
   list(APPEND components linux linuxio)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "IRIX")
-  set(hwloc_have_irix ON)
   autoutils_write_to_config_header("#define HWLOC_IRIX_SYS 1")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  set(hwloc_have_darwin ON)
   autoutils_write_to_config_header("#define HWLOC_DARWIN_SYS 1")
   list(APPEND components darwin)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Solaris")
-  set(hwloc_have_solaris ON)
   autoutils_write_to_config_header("#define HWLOC_SOLARIS_SYS 1")
   list(APPEND components solaris)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "AIX")
-  set(hwloc_have_aix ON)
   autoutils_write_to_config_header("#define HWLOC_AIX_SYS 1")
   list(APPEND components aix)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "HPUX")
-  set(hwloc_have_hpux ON)
   autoutils_write_to_config_header("#define HWLOC_HPUX_SYS 1")
   list(APPEND components hpux)
 elseif(WIN32)
-  set(hwloc_have_windows ON)
+  set(HWLOC_HAVE_WINDOWS ON)
   autoutils_write_to_config_header("#define HWLOC_WIN_SYS 1")
   list(APPEND components windows)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-  set(hwloc_have_freebsd ON)
   autoutils_write_to_config_header("#define HWLOC_FREEBSD_SYS 1")
   list(APPEND components freebsd)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
-  set(hwloc_have_netbsd ON)
   autoutils_write_to_config_header("#define HWLOC_NETBSD_SYS 1")
   list(APPEND components netbsd)
 else()
@@ -303,6 +314,7 @@ autoutils_check_func(setlocale)
 
 autoutils_check_header("stdint.h")
 if(HAVE_STDINT_H)
+  set(HWLOC_HAVE_STDINT_H ON)
   autoutils_write_to_config_header("#define HWLOC_HAVE_STDINT_H 1")
 endif()
 
@@ -344,6 +356,9 @@ if(HAVE_LIBUSER32)
 endif()
 
 autoutils_check_header("windows.h")
+if(HAVE_WINDOWS_H)
+  set(HWLOC_HAVE_WINDOWS_H ON)
+endif()
 
 autoutils_check_header("sys/lgrp_user.h")
 if(HAVE_SYS_LGRP_USER_H)
@@ -831,7 +846,11 @@ if(HWLOC_PLUGINS)
   list(APPEND libs ltdl)
 endif()
 
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/hwloc/autogen/config.h")
+
 set(hwloc_include_dirs
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>)
 add_subdirectory(hwloc)
