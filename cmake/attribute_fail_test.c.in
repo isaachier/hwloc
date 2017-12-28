@@ -1,0 +1,6 @@
+int main()
+{
+    int i = 4711;
+    i = usage(&i);
+    return 0;
+}

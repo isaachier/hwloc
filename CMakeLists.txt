@@ -850,6 +850,24 @@ configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/config.h.in"
   "${CMAKE_CURRENT_BINARY_DIR}/include/hwloc/autogen/config.h")
 
+set(static_components_header
+    "${CMAKE_CURRENT_BINARY_DIR}/include/static-components.h")
+if(EXISTS "${static_components_header}")
+  file(REMOVE "${static_components_header}")
+endif()
+foreach(component ${components})
+  set(line "HWLOC_DECLSPEC extern const struct hwloc_component")
+  set(line "${line} hwloc_${component}_component;")
+  file(APPEND "${static_components_header}" "${line}\n")
+endforeach()
+file(APPEND "${static_components_header}"
+     "static const struct hwloc_component *hwloc_static_components[] = {\n")
+foreach(component ${components})
+  file(APPEND "${static_components_header}"
+       "    &hwloc_${component}_component,\n")
+endforeach()
+file(APPEND "${static_components_header}" "    NULL\n};\n")
+
 set(hwloc_include_dirs
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>)
