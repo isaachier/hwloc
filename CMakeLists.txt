@@ -12,8 +12,8 @@ include(CMakeDependentOption)
 
 include(HunterGate)
 HunterGate(
-    URL "https://github.com/ruslo/hunter/archive/v0.19.213.tar.gz"
-    SHA1 "59b2b880178bdc1e9cce83f279f1d88feefa07a2"
+    URL "https://github.com/ruslo/hunter/archive/v0.19.215.tar.gz"
+    SHA1 "932f86a890905ed5ffb945be328be5aabfc74674"
 )
 
 execute_process(COMMAND /bin/sh config/hwloc_get_version.sh VERSION --version
